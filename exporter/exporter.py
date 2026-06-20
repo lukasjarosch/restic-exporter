@@ -394,7 +394,7 @@ class ResticCollector(Collector):
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode != 0:
             raise Exception("Error executing restic snapshot command: " + self.parse_stderr(result))
-        return json.loads(result.stdout.decode("utf-8"))
+        return self.parse_restic_json(result)
 
     def get_stats_global(self) -> ResticGlobalStats:
         stats = ResticGlobalStats(
@@ -469,7 +469,7 @@ class ResticCollector(Collector):
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode != 0:
             raise Exception("Error executing restic stats command: " + self.parse_stderr(result))
-        return json.loads(result.stdout.decode("utf-8"))
+        return self.parse_restic_json(result)
 
     def get_check(self) -> int:
         # This command takes 20 seconds or more, but it's required
@@ -543,6 +543,18 @@ class ResticCollector(Collector):
             data_added=summary.get("data_added", -1),
             duration=duration,
         )
+
+    @staticmethod
+    def parse_restic_json(result: subprocess.CompletedProcess) -> dict | list:
+        # Restic >= 0.19 prepends a progress line such as
+        # "[0:00] 100.00%  1 / 1 snapshots, ..." to stdout before the JSON
+        # Try to parse the full output first, then fall-back to attempt to strip that line.
+        text = result.stdout.decode("utf-8")
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            cleaned = "\n".join(line for line in text.splitlines() if not re.match(r"^\[[0-9:]+\]", line))
+            return json.loads(cleaned)
 
     @staticmethod
     def parse_stderr(result: subprocess.CompletedProcess) -> str:

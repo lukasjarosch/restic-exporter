@@ -741,6 +741,19 @@ class TestResticCollector:
         result = ResticCollector.parse_stderr(mock_result)
         assert result == "Error: repository not found  Exit code: 1"
 
+    def test_parse_restic_json(self):
+        # Clean JSON is parsed as-is
+        clean = MagicMock(stdout=b'{"total_size": 123}')
+        assert ResticCollector.parse_restic_json(clean) == {"total_size": 123}
+
+        # Restic >= 0.19 prepends a progress line to stdout before the JSON
+        with_progress = MagicMock(stdout=b'[0:00] 100.00%  1 / 1 snapshots, 71 files, 1.928 MiB\n{"total_size": 123}')
+        assert ResticCollector.parse_restic_json(with_progress) == {"total_size": 123}
+
+        # The progress line also precedes JSON arrays (snapshots output)
+        array_with_progress = MagicMock(stdout=b'[0:00] 100.00%  1 / 1 index files\n[{"id": "abc"}]')
+        assert ResticCollector.parse_restic_json(array_with_progress) == [{"id": "abc"}]
+
 
 class TestMain:
     @patch("exporter.exporter.start_http_server")
